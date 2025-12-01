@@ -1,24 +1,19 @@
 package main
 
 import (
-  "net/http"
+	"lipasto/internal/git"
 
-  "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
-  // Create a Gin router with default middleware (logger and recovery)
-  r := gin.Default()
+	r := gin.Default()
+	r.LoadHTMLGlob("templates/*")
 
-  // Define a simple GET endpoint
-  r.GET("/ping", func(c *gin.Context) {
-    // Return JSON response
-    c.JSON(http.StatusOK, gin.H{
-      "message": "pong",
-    })
-  })
+	r.GET("/commits", func(c *gin.Context) {
+		commits := git.GetCommits("/tmp/bare-repo", 50)
+		c.HTML(200, "commits.html", gin.H{"Commits": commits})
+	})
 
-  // Start server on port 8080 (default)
-  // Server will listen on 0.0.0.0:8080 (localhost:8080 on Windows)
-  r.Run()
+	r.Run()
 }

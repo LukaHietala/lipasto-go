@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Commits</title>
+</head>
+<body>
+    <h1>Commits</h1>
+    <ul>
+        {{range .Commits}}
+        <li>{{.Hash}} - {{.Message}} ({{.Author}} {{.Timestamp}})</li>
+        {{end}}
+    </ul>
+</body>
+</html>
+
