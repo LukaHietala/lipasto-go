@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Repositories</title>
+</head>
+<body>
+    <h1>Repositories</h1>
+    <ul>
+        {{range .Repos}}
+        <li><a href="/{{.Name}}">{{.Name}}</a></li>
+        {{end}}
+    </ul>
+</body>
+</html>

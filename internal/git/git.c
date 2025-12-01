@@ -1,6 +1,6 @@
 #include <git2.h>
-#include <string.h>
 #include <stdio.h>
+#include <dirent.h>
 #include "git.h"
 
 /* Gets all the commits from bare repository*/
@@ -42,6 +42,40 @@ int get_commits(const char *repo_path, Commit *commits, int max)
 
     git_revwalk_free(walker);
     git_repository_free(repo);
+    git_libgit2_shutdown();
+    return count;
+}
+
+/* Lists all bare git repositories in a directory */
+int list_bare_repos(const char *dir_path, BareRepo *repos, int max)
+{
+    git_libgit2_init();
+    
+    DIR *dir = opendir(dir_path);
+    if (!dir) {
+        git_libgit2_shutdown();
+        return 0;
+    }
+
+    struct dirent *entry;
+    int count = 0;
+
+    while (count < max && (entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') continue;
+
+        char full_path[PATH_SIZE];
+        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+
+        git_repository *repo = NULL;
+        if (git_repository_open_bare(&repo, full_path) == 0) {
+            snprintf(repos[count].path, sizeof(repos[count].path), "%s", full_path);
+            snprintf(repos[count].name, sizeof(repos[count].name), "%s", entry->d_name);
+            git_repository_free(repo);
+            count++;
+        }
+    }
+
+    closedir(dir);
     git_libgit2_shutdown();
     return count;
 }
