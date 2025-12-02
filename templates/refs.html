@@ -1,0 +1,15 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{.RepoName}} - Refs</title>
+</head>
+<body>
+    <h1><a href="/">Back</a> {{.RepoName}}</h1>
+    <ul>
+        {{range .References}}
+        <li>{{.Hash}} - {{.Name}} {{.Shorthand}}</li>
+        {{end}}
+    </ul>
+</body>
+</html>

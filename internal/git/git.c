@@ -3,6 +3,40 @@
 #include <dirent.h>
 #include "git.h"
 
+/* Lists all bare git repositories in a directory */
+int list_bare_repos(const char *dir_path, BareRepo *repos, int max)
+{
+    git_libgit2_init();
+    
+    DIR *dir = opendir(dir_path);
+    if (!dir) {
+        git_libgit2_shutdown();
+	return -1;
+    }
+
+    struct dirent *entry;
+    int count = 0;
+
+    while (count < max && (entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') continue;
+
+        char full_path[PATH_SIZE];
+        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+
+        git_repository *repo = NULL;
+        if (git_repository_open_bare(&repo, full_path) == 0) {
+            snprintf(repos[count].path, sizeof(repos[count].path), "%s", full_path);
+            snprintf(repos[count].name, sizeof(repos[count].name), "%s", entry->d_name);
+            git_repository_free(repo);
+            count++;
+        }
+    }
+
+    closedir(dir);
+    git_libgit2_shutdown();
+    return count;
+}
+
 /* Gets all the commits from bare repository*/
 int get_commits(const char *repo_path, Commit *commits, int max) 
 {
@@ -11,7 +45,7 @@ int get_commits(const char *repo_path, Commit *commits, int max)
     git_repository *repo = NULL;
     if (git_repository_open_bare(&repo, repo_path) != 0) {
 	git_libgit2_shutdown();
-	return 0;
+	return -1;
     }
 
     git_revwalk *walker = NULL;
@@ -46,36 +80,108 @@ int get_commits(const char *repo_path, Commit *commits, int max)
     return count;
 }
 
-/* Lists all bare git repositories in a directory */
-int list_bare_repos(const char *dir_path, BareRepo *repos, int max)
+int get_references(const char* repo_path, Reference *references)
 {
     git_libgit2_init();
     
-    DIR *dir = opendir(dir_path);
-    if (!dir) {
-        git_libgit2_shutdown();
-        return 0;
+    git_repository *repo = NULL;
+    if (git_repository_open_bare(&repo, repo_path) != 0) {
+	git_libgit2_shutdown();
+	return -1;
     }
 
-    struct dirent *entry;
+    git_reference_iterator *iter = NULL;
+    int error = git_reference_iterator_new(&iter, repo);
+    
+    if (error != 0) {
+        git_repository_free(repo);
+        git_libgit2_shutdown();
+        return -1;
+    }
+
+    git_reference *ref = NULL;
     int count = 0;
 
-    while (count < max && (entry = readdir(dir)) != NULL) {
-        if (entry->d_name[0] == '.') continue;
+    while (!(error = git_reference_next(&ref, iter))) {
+	const char *name = git_reference_name(ref); 
+	const char *shorthand = git_reference_shorthand(ref);
 
-        char full_path[PATH_SIZE];
-        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+	git_reference *resolved = NULL;
+        const git_oid *oid_ptr = NULL;
 
-        git_repository *repo = NULL;
-        if (git_repository_open_bare(&repo, full_path) == 0) {
-            snprintf(repos[count].path, sizeof(repos[count].path), "%s", full_path);
-            snprintf(repos[count].name, sizeof(repos[count].name), "%s", entry->d_name);
-            git_repository_free(repo);
-            count++;
+        if (git_reference_resolve(&resolved, ref) == 0) {
+            oid_ptr = git_reference_target(resolved);
         }
+
+        if (oid_ptr) {
+            git_oid_tostr(references[count].hash,
+                          sizeof(references[count].hash),
+                          oid_ptr);
+        } else {
+            /* no valid oid :(*/
+            references[count].hash[0] = '\0';
+        }        
+
+	snprintf(references[count].name, sizeof(references[count].name), "%s", name ? name : "");
+        snprintf(references[count].shorthand, sizeof(references[count].shorthand), "%s", shorthand ? shorthand : "");
+
+	git_reference_free(ref); 
+	git_reference_free(resolved);
+	resolved = NULL;
+	ref = NULL;
+
+	count++;
+
     }
 
-    closedir(dir);
+    if (error != GIT_ITEROVER) {
+	git_reference_iterator_free(iter);
+        git_repository_free(repo);
+        git_libgit2_shutdown();
+	return -1;
+    }
+
+    git_reference_iterator_free(iter);
+    git_repository_free(repo);
     git_libgit2_shutdown();
+
     return count;
 }
+
+int get_reference_count(const char *repo_path)
+{
+    git_libgit2_init();
+
+    git_repository *repo = NULL;
+    if (git_repository_open_bare(&repo, repo_path) != 0) {
+        git_libgit2_shutdown();
+        return -1;
+    }
+
+    git_reference_iterator *iter = NULL;
+    int error = git_reference_iterator_new(&iter, repo);
+    if (error != 0) {
+        git_repository_free(repo);
+        git_libgit2_shutdown();
+        return -1;
+    }
+
+    git_reference *ref = NULL;
+    int count = 0;
+
+    while (!(error = git_reference_next(&ref, iter))) {
+        count++;
+        git_reference_free(ref);
+        ref = NULL;
+    }
+
+    git_reference_iterator_free(iter);
+    git_repository_free(repo);
+    git_libgit2_shutdown();
+
+    if (error != GIT_ITEROVER)
+        return -1;
+
+    return count;
+}
+
