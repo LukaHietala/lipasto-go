@@ -4,7 +4,8 @@
 /** completely arbituary */
 #define HASH_SIZE 41
 #define MESSAGE_SIZE 256
-#define AUTHOR_SIZE 128
+#define AUTHOR_SIZE 256
+#define COMMITTER_SIZE 256
 #define PATH_SIZE 512
 #define REFERENCE_NAME_SIZE 256
 #define REFERENCE_SHORTHAND_SIZE 128
@@ -17,8 +18,11 @@ typedef struct {
 
 typedef struct {
     char hash[HASH_SIZE];
+    char parent_hash[HASH_SIZE];
+    char tree_id[HASH_SIZE];
     char message[MESSAGE_SIZE];
     char author[AUTHOR_SIZE];
+    char committer[COMMITTER_SIZE];
     long timestamp;
 } Commit;
 
@@ -32,5 +36,6 @@ int list_bare_repos(const char *dir_path, BareRepo *repos, int max);
 int get_commits(const char *repo_path, Commit *commits, int max);
 int get_references(const char *repo_path, Reference *references);
 int get_reference_count(const char *repo_path);
+int get_commit(const char* repo_path, const char* oidstr, Commit *commit);
 #endif
 
