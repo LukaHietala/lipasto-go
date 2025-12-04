@@ -104,15 +104,17 @@ int get_commits(const char *repo_path, Commit *commits, int max)
 
 	/* get author */
         const git_signature *author = git_commit_author(commit);
-        if (author && author->name) {
-            snprintf(commits[count].author, sizeof(commits[count].author), "%s", author->name);
+        if (author && author->name && author->email) {
+            snprintf(commits[count].author.name, sizeof(commits[count].author.name), "%s", author->name);
+            snprintf(commits[count].author.email, sizeof(commits[count].author.email), "%s", author->email);
             commits[count].timestamp = author->when.time;
         }
 
 	/* get committer */
         const git_signature *committer = git_commit_committer(commit);
-        if (committer && committer->name) {
-            snprintf(commits[count].committer, sizeof(commits[count].committer), "%s", committer->name);
+        if (committer && committer->name && committer->email) {
+            snprintf(commits[count].committer.name, sizeof(commits[count].committer.name), "%s", committer->name);
+            snprintf(commits[count].committer.email, sizeof(commits[count].committer.email), "%s", committer->email);
         }
 
         git_commit_free(commit);
@@ -291,16 +293,22 @@ int get_commit(const char *repo_path, const char *oidstr, Commit *commit)
     /* get author */
     const git_signature *author = git_commit_author(commit_obj);
     if (author) {
-        snprintf(commit->author, sizeof(commit->author), "%s",
+        snprintf(commit->author.name, sizeof(commit->author.name), "%s",
                  author->name ? author->name : "");
+	snprintf(commit->author.email, sizeof(commit->author.email), "%s",
+                 author->email ? author->email : "");
+
         commit->timestamp = author->when.time;
     }
 	
     /* get committer */
     const git_signature *committer = git_commit_committer(commit_obj);
     if (committer) {
-        snprintf(commit->committer, sizeof(commit->committer), "%s",
+        snprintf(commit->committer.name, sizeof(commit->committer.name), "%s",
                  committer->name ? committer->name : "");
+	snprintf(commit->committer.email, sizeof(commit->committer.email), "%s",
+                 committer->email ? committer->email : "");
+
     }
 
     result = 0;

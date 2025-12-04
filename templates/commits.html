@@ -9,7 +9,7 @@
         {{range .Commits}}
         <li>
             <a href="/{{$.RepoName}}/commit/{{.Hash}}">{{.Hash}}</a>
-            - {{.Message}} ({{.Author}} {{.Timestamp}})
+            - {{.Message}} ({{.Author.Name}} {{.Timestamp}})
         </li>
         {{end}}
     </ul>

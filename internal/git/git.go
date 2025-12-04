@@ -17,13 +17,18 @@ type BareRepo struct {
 	Name string
 }
 
+type Signature struct {
+	Name string
+	Email string
+}
+
 type Commit struct {
 	Hash       string
 	ParentHash string
 	TreeID     string
 	Message    string
-	Author     string
-	Committer  string
+	Author     Signature
+	Committer  Signature
 	Timestamp  time.Time
 }
 
@@ -114,8 +119,8 @@ func commitFromC(cCommit *C.Commit) Commit {
 		ParentHash: C.GoString(&cCommit.parent_hash[0]),
 		TreeID:     C.GoString(&cCommit.tree_id[0]),
 		Message:    C.GoString(&cCommit.message[0]),
-		Author:     C.GoString(&cCommit.author[0]),
-		Committer:  C.GoString(&cCommit.committer[0]),
+		Author:     Signature{ C.GoString(&cCommit.author.name[0]), C.GoString(&cCommit.author.email[0]) },
+		Committer:  Signature{ C.GoString(&cCommit.committer.name[0]), C.GoString(&cCommit.committer.email[0]) },
 		Timestamp:  time.Unix(int64(cCommit.timestamp), 0),
 	}
 }

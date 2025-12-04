@@ -5,8 +5,8 @@
 </head>
 <body>
     <h1><a href="/">Repos</a> / <a href="/{{.RepoName}}">{{.RepoName}}</a> / {{.Commit.Hash}}</h1>
-    <p><strong>Author:</strong> {{.Commit.Author}}</p>
-    <p><strong>Committer:</strong> {{.Commit.Committer}}</p>
+    <p><strong>Author:</strong> {{.Commit.Author.Name}} &lt;{{.Commit.Author.Email}}&gt;</p>
+    <p><strong>Committer:</strong>{{.Commit.Committer.Name}} &lt;{{.Commit.Committer.Email}}&gt;</p>
     <p><strong>Date:</strong> {{.Commit.Timestamp}}</p>
     <p><strong>Parent:</strong> {{.Commit.ParentHash}}</p>
     <p><strong>Tree:</strong> {{.Commit.TreeID}}</p>

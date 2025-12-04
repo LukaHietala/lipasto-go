@@ -4,8 +4,6 @@
 /** completely arbituary */
 #define HASH_SIZE 41
 #define MESSAGE_SIZE 256
-#define AUTHOR_SIZE 256
-#define COMMITTER_SIZE 256
 #define PATH_SIZE 512
 #define REFERENCE_NAME_SIZE 256
 #define REFERENCE_SHORTHAND_SIZE 128
@@ -16,13 +14,19 @@ typedef struct {
     char name[MESSAGE_SIZE];
 } BareRepo;
 
+/* committer or author */
+typedef struct {
+    char name[256];
+    char email[256];
+} Signature;
+
 typedef struct {
     char hash[HASH_SIZE];
     char parent_hash[HASH_SIZE];
     char tree_id[HASH_SIZE];
     char message[MESSAGE_SIZE];
-    char author[AUTHOR_SIZE];
-    char committer[COMMITTER_SIZE];
+    Signature author; 
+    Signature committer;
     long timestamp;
 } Commit;
 
