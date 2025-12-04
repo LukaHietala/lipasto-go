@@ -2,344 +2,464 @@
 #include <stdio.h>
 #include <dirent.h>
 #include <string.h>
+#include <errno.h>
 #include "git.h"
 
 /* EVERYTHING NEEDS TO BE CLEANED WITH goto cleanup logic*/
 
-/* lists all bare repos from dir */
-int list_bare_repos(const char *dir_path, BareRepo *repos, int max)
+/* clears error buffer */
+static void clear_error(char *err, size_t errlen)
 {
-    git_libgit2_init();
+	if (err && errlen > 0)
+		err[0] = '\0';
+}
 
-    DIR *dir = NULL;
-    struct dirent *entry = NULL;
-    int count = 0;
-    int result = -1;
+/* sets error message from git or fallback */
+static void set_error(char *err, size_t errlen, const char *fallback, int code)
+{
+	if (!err || errlen == 0)
+		return;
 
-    dir = opendir(dir_path);
-    if (!dir)
-        goto cleanup;
+	const git_error *git_err = git_error_last();
+	if (git_err && git_err->message && git_err->message[0] != '\0') {
+		snprintf(err, errlen, "%s", git_err->message);
+		return;
+	}
+
+	/* for non git errors, or just fallback */
+	if (fallback && fallback[0] != '\0') {
+		snprintf(err, errlen, "%s", fallback);
+		return;
+	}
+
+	snprintf(err, errlen, "git error %d", code);
+}
+
+/* lists all bare repos from dir */
+int list_bare_repos(const char *dir_path, BareRepo *repos, int max, char *err,
+		    size_t errlen)
+{
+	git_libgit2_init();
+
+	DIR *dir = NULL;
+	struct dirent *entry = NULL;
+	int count = 0;
+	int result = -1;
+
+	clear_error(err, errlen);
+
+	dir = opendir(dir_path);
+	if (!dir) {
+		char buf[256];
+		snprintf(buf, sizeof(buf), "failed to open dir %s: %s",
+			 dir_path, strerror(errno));
+		set_error(err, errlen, buf, result);
+		goto cleanup;
+	}
 
 	/* 
 	* find all bare repos from dir
 	* TODO: get rid of max, dynamic alloc later
 	*/
-    while (count < max && (entry = readdir(dir)) != NULL) {
-        if (entry->d_name[0] == '.')
-            continue;
+	while (count < max && (entry = readdir(dir)) != NULL) {
+		if (entry->d_name[0] == '.')
+			continue;
 
-        char full_path[PATH_SIZE];
-        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+		char full_path[PATH_SIZE];
+		snprintf(full_path, sizeof(full_path), "%s/%s", dir_path,
+			 entry->d_name);
 
-        git_repository *repo = NULL;
-        if (git_repository_open_bare(&repo, full_path) == 0) {
-            snprintf(repos[count].path, sizeof(repos[count].path), "%s", full_path);
-            snprintf(repos[count].name, sizeof(repos[count].name), "%s", entry->d_name);
-            git_repository_free(repo);
-            repo = NULL;
-            count++;
-        }
-    }
+		git_repository *repo = NULL;
+		if (git_repository_open_bare(&repo, full_path) == 0) {
+			snprintf(repos[count].path, sizeof(repos[count].path),
+				 "%s", full_path);
+			snprintf(repos[count].name, sizeof(repos[count].name),
+				 "%s", entry->d_name);
+			git_repository_free(repo);
+			repo = NULL;
+			count++;
+		}
+	}
 
-    result = count;
+	result = count;
 
 cleanup:
-    if (dir)
-        closedir(dir);
-    git_libgit2_shutdown();
-    return result;
+	if (dir)
+		closedir(dir);
+	git_libgit2_shutdown();
+	return result;
 }
 
 /* gets all commits from repo */
-int get_commits(const char *repo_path, const char *ref, Commit *commits, int max, int skip)
+int get_commits(const char *repo_path, const char *ref, Commit *commits,
+		int max, int skip, char *err, size_t errlen)
 {
-    git_libgit2_init();
+	git_libgit2_init();
 
-    int result = -1;
-    git_repository *repo = NULL;
-    git_revwalk *walker = NULL;
-    git_oid oid;
-    git_object *obj = NULL; /* ?ref= */
-    int count = 0;
+	int result = -1;
+	git_repository *repo = NULL;
+	git_revwalk *walker = NULL;
+	git_oid oid;
+	git_object *obj = NULL; /* ?ref= */
+	int count = 0;
+	int error = 0;
 
-    if (strlen(ref) == 0) {
-	ref = "HEAD";
-    }
+	clear_error(err, errlen);
 
-    if (git_repository_open_bare(&repo, repo_path) != 0)
-        goto cleanup;
-
-    if (git_revwalk_new(&walker, repo) != 0)
-        goto cleanup;
-
-    if (git_revparse_single(&obj, repo, ref) != 0) {
-	goto cleanup;
-    }
-
-    /* TODO: peel if not commit object */
-    const git_oid *git_obj_id = git_object_id(obj); 
-
-    /* TODO?: resolve blobs and trees and get all the commits that touch them */
-    git_revwalk_sorting(walker, GIT_SORT_TIME);
-    if (git_revwalk_push(walker, git_obj_id) != 0)
-        goto cleanup;
-
-    int point = 0;
-    while (count < max && git_revwalk_next(&oid, walker) == 0) {
-	/* skip until page start (skip) */
-	if (point < skip) {
-	    point++;
-	    continue;
+	if (strlen(ref) == 0) {
+		ref = "HEAD";
 	}
 
-        git_commit *commit = NULL;
+	error = git_repository_open_bare(&repo, repo_path);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
 
-	/* lookup commit by oid */
-        if (git_commit_lookup(&commit, repo, &oid) != 0)
-            continue;
+	error = git_revwalk_new(&walker, repo);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
 
-        git_oid_tostr(commits[count].hash, sizeof(commits[count].hash), &oid);
+	error = git_revparse_single(&obj, repo, ref);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
 
-	/* get parent commit oid */
-        if (git_commit_parentcount(commit) > 0) {
-            const git_oid *parent_oid = git_commit_parent_id(commit, 0);
-            if (parent_oid) {
-                git_oid_tostr(commits[count].parent_hash,
-                              sizeof(commits[count].parent_hash),
-                              parent_oid);
-            }
-        }
+	/* TODO: peel if not commit object */
+	const git_oid *git_obj_id = git_object_id(obj);
 
-        /* get tree oid */
-        const git_oid *tree_oid = git_commit_tree_id(commit);
-        if (tree_oid) {
-            git_oid_tostr(commits[count].tree_id,
-                          sizeof(commits[count].tree_id),
-                          tree_oid);
-        }
+	/* TODO?: resolve blobs and trees and get all the commits that touch them */
+	git_revwalk_sorting(walker, GIT_SORT_TIME);
+	error = git_revwalk_push(walker, git_obj_id);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
 
-	/* get commit message */
-        const char *msg = git_commit_message(commit);
-        snprintf(commits[count].message, sizeof(commits[count].message), "%s", msg ? msg : "");
+	int point = 0;
+	while (count < max && git_revwalk_next(&oid, walker) == 0) {
+		/* skip until page start (skip) */
+		if (point < skip) {
+			point++;
+			continue;
+		}
 
-	/* get author */
-        const git_signature *author = git_commit_author(commit);
-        if (author && author->name && author->email) {
-            snprintf(commits[count].author.name, sizeof(commits[count].author.name), "%s", author->name);
-            snprintf(commits[count].author.email, sizeof(commits[count].author.email), "%s", author->email);
-            commits[count].timestamp = author->when.time;
-        }
+		git_commit *commit = NULL;
 
-	/* get committer */
-        const git_signature *committer = git_commit_committer(commit);
-        if (committer && committer->name && committer->email) {
-            snprintf(commits[count].committer.name, sizeof(commits[count].committer.name), "%s", committer->name);
-            snprintf(commits[count].committer.email, sizeof(commits[count].committer.email), "%s", committer->email);
-        }
+		/* lookup commit by oid */
+		error = git_commit_lookup(&commit, repo, &oid);
+		if (error != 0) {
+			result = error;
+			set_error(err, errlen, NULL, error);
+			goto cleanup;
+		}
 
-        git_commit_free(commit);
-        commit = NULL;
-        count++;
-    }
+		git_oid_tostr(commits[count].hash, sizeof(commits[count].hash),
+			      &oid);
 
-    result = count;
+		/* get parent commit oid */
+		if (git_commit_parentcount(commit) > 0) {
+			const git_oid *parent_oid =
+				git_commit_parent_id(commit, 0);
+			if (parent_oid) {
+				git_oid_tostr(
+					commits[count].parent_hash,
+					sizeof(commits[count].parent_hash),
+					parent_oid);
+			}
+		}
+
+		/* get tree oid */
+		const git_oid *tree_oid = git_commit_tree_id(commit);
+		if (tree_oid) {
+			git_oid_tostr(commits[count].tree_id,
+				      sizeof(commits[count].tree_id), tree_oid);
+		}
+
+		/* get commit message */
+		const char *msg = git_commit_message(commit);
+		snprintf(commits[count].message, sizeof(commits[count].message),
+			 "%s", msg ? msg : "");
+
+		/* get author */
+		const git_signature *author = git_commit_author(commit);
+		if (author && author->name && author->email) {
+			snprintf(commits[count].author.name,
+				 sizeof(commits[count].author.name), "%s",
+				 author->name);
+			snprintf(commits[count].author.email,
+				 sizeof(commits[count].author.email), "%s",
+				 author->email);
+			commits[count].timestamp = author->when.time;
+		}
+
+		/* get committer */
+		const git_signature *committer = git_commit_committer(commit);
+		if (committer && committer->name && committer->email) {
+			snprintf(commits[count].committer.name,
+				 sizeof(commits[count].committer.name), "%s",
+				 committer->name);
+			snprintf(commits[count].committer.email,
+				 sizeof(commits[count].committer.email), "%s",
+				 committer->email);
+		}
+
+		git_commit_free(commit);
+		commit = NULL;
+		count++;
+	}
+
+	result = count;
 
 cleanup:
-    if (walker)
-        git_revwalk_free(walker);
-    if (repo)
-        git_repository_free(repo);
-    if (obj)
-	git_object_free(obj);
-    git_libgit2_shutdown();
-    return result;
+	if (walker)
+		git_revwalk_free(walker);
+	if (repo)
+		git_repository_free(repo);
+	if (obj)
+		git_object_free(obj);
+	git_libgit2_shutdown();
+	return result;
 }
 
 /* gets all references from repo */
-int get_references(const char *repo_path, Reference *references)
+int get_references(const char *repo_path, Reference *references, char *err,
+		   size_t errlen)
 {
-    git_libgit2_init();
+	git_libgit2_init();
 
-    git_repository *repo = NULL;
-    git_reference_iterator *iter = NULL;
-    git_reference *ref = NULL;
-    git_reference *resolved = NULL;
-    int result = -1;
-    int error = 0;
-    int count = 0;
+	git_repository *repo = NULL;
+	git_reference_iterator *iter = NULL;
+	git_reference *ref = NULL;
+	git_reference *resolved = NULL;
+	int result = -1;
+	int error = 0;
+	int count = 0;
 
-    if (git_repository_open_bare(&repo, repo_path) != 0)
-        goto cleanup;
+	clear_error(err, errlen);
 
-    if ((error = git_reference_iterator_new(&iter, repo)) != 0)
-        goto cleanup;
+	error = git_repository_open_bare(&repo, repo_path);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
 
-    /* iterate over all references */
-    while (!(error = git_reference_next(&ref, iter))) {
-	/* get reference details */
-        const char *name = git_reference_name(ref);
-        const char *shorthand = git_reference_shorthand(ref);
-        const git_oid *oid_ptr = NULL;
+	error = git_reference_iterator_new(&iter, repo);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
 
-	/* 
+	/* iterate over all references */
+	while (!(error = git_reference_next(&ref, iter))) {
+		/* get reference details */
+		const char *name = git_reference_name(ref);
+		const char *shorthand = git_reference_shorthand(ref);
+		const git_oid *oid_ptr = NULL;
+
+		/* 
 	* resolve reference to its target, for sybolic stuff 
 	* https://lore.kernel.org/git/AANLkTinsJkzYggMtNrLRv-qNxRncrXSe6A46Z=d8xkw7@mail.gmail.com/
 	*/
-        if (git_reference_resolve(&resolved, ref) == 0)
-            oid_ptr = git_reference_target(resolved);
+		if (git_reference_resolve(&resolved, ref) == 0)
+			oid_ptr = git_reference_target(resolved);
 
-        if (oid_ptr) {
-            git_oid_tostr(references[count].hash,
-                          sizeof(references[count].hash),
-                          oid_ptr);
-        } else {
-            references[count].hash[0] = '\0';
-        }
+		if (oid_ptr) {
+			git_oid_tostr(references[count].hash,
+				      sizeof(references[count].hash), oid_ptr);
+		} else {
+			references[count].hash[0] = '\0';
+		}
 
-        snprintf(references[count].name, sizeof(references[count].name), "%s", name ? name : "");
-        snprintf(references[count].shorthand, sizeof(references[count].shorthand), "%s", shorthand ? shorthand : "");
+		snprintf(references[count].name, sizeof(references[count].name),
+			 "%s", name ? name : "");
+		snprintf(references[count].shorthand,
+			 sizeof(references[count].shorthand), "%s",
+			 shorthand ? shorthand : "");
 
-        git_reference_free(ref);
-        ref = NULL;
-	/* resolve reference needs to be freed too*/
-        if (resolved) {
-            git_reference_free(resolved);
-            resolved = NULL;
-        }
+		git_reference_free(ref);
+		ref = NULL;
+		/* resolve reference needs to be freed too*/
+		if (resolved) {
+			git_reference_free(resolved);
+			resolved = NULL;
+		}
 
-        count++;
-    }
+		count++;
+	}
 
-    if (error != GIT_ITEROVER)
-        goto cleanup;
+	if (error != GIT_ITEROVER) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
 
-    result = count;
+	result = count;
 
 cleanup:
-    if (ref)
-        git_reference_free(ref);
-    if (resolved)
-        git_reference_free(resolved);
-    if (iter)
-        git_reference_iterator_free(iter);
-    if (repo)
-        git_repository_free(repo);
-    git_libgit2_shutdown();
-    return result;
+	if (ref)
+		git_reference_free(ref);
+	if (resolved)
+		git_reference_free(resolved);
+	if (iter)
+		git_reference_iterator_free(iter);
+	if (repo)
+		git_repository_free(repo);
+	git_libgit2_shutdown();
+	return result;
 }
 
 /* for dynamically allocating slice on go side */
-int get_reference_count(const char *repo_path)
+int get_reference_count(const char *repo_path, char *err, size_t errlen)
 {
-    git_libgit2_init();
+	git_libgit2_init();
 
-    git_repository *repo = NULL;
-    git_reference_iterator *iter = NULL;
-    git_reference *ref = NULL;
-    int result = -1;
-    int error = 0;
-    int count = 0;
+	git_repository *repo = NULL;
+	git_reference_iterator *iter = NULL;
+	git_reference *ref = NULL;
+	int result = -1;
+	int error = 0;
+	int count = 0;
 
-    if (git_repository_open_bare(&repo, repo_path) != 0)
-        goto cleanup;
+	clear_error(err, errlen);
 
-    if ((error = git_reference_iterator_new(&iter, repo)) != 0)
-        goto cleanup;
+	error = git_repository_open_bare(&repo, repo_path);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
 
-    while (!(error = git_reference_next(&ref, iter))) {
-        count++;
-        git_reference_free(ref);
-        ref = NULL;
-    }
+	error = git_reference_iterator_new(&iter, repo);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
 
-    if (error != GIT_ITEROVER)
-        goto cleanup;
+	while (!(error = git_reference_next(&ref, iter))) {
+		count++;
+		git_reference_free(ref);
+		ref = NULL;
+	}
 
-    result = count;
+	if (error != GIT_ITEROVER) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
+
+	result = count;
 
 cleanup:
-    if (ref)
-        git_reference_free(ref);
-    if (iter)
-        git_reference_iterator_free(iter);
-    if (repo)
-        git_repository_free(repo);
-    git_libgit2_shutdown();
-    return result;
+	if (ref)
+		git_reference_free(ref);
+	if (iter)
+		git_reference_iterator_free(iter);
+	if (repo)
+		git_repository_free(repo);
+	git_libgit2_shutdown();
+	return result;
 }
 
 /* gets single commit by oidstr */
-int get_commit(const char *repo_path, const char *oidstr, Commit *commit)
+int get_commit(const char *repo_path, const char *oidstr, Commit *commit,
+	       char *err, size_t errlen)
 {
-    if (commit == NULL)
-        return -1;
+	if (commit == NULL)
+		return -1;
 
-    git_libgit2_init();
+	git_libgit2_init();
 
-    int result = -1;
-    git_repository *repo = NULL;
-    git_commit *commit_obj = NULL;
-    git_oid oid;
+	int result = -1;
+	git_repository *repo = NULL;
+	git_commit *commit_obj = NULL;
+	git_oid oid;
+	int error = 0;
 
-    if (git_repository_open_bare(&repo, repo_path) != 0)
-        goto cleanup;
+	clear_error(err, errlen);
 
-    if (git_oid_fromstr(&oid, oidstr) != 0)
-        goto cleanup;
+	error = git_repository_open_bare(&repo, repo_path);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
 
-    if (git_commit_lookup(&commit_obj, repo, &oid) != 0)
-        goto cleanup;
+	error = git_oid_fromstr(&oid, oidstr);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, "invalid oid", error);
+		goto cleanup;
+	}
 
-    git_oid_tostr(commit->hash, sizeof(commit->hash), &oid);
+	error = git_commit_lookup(&commit_obj, repo, &oid);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
 
-    /* get parent commit oid */
-    if (git_commit_parentcount(commit_obj) > 0) {
-        const git_oid *parent_oid = git_commit_parent_id(commit_obj, 0);
-        if (parent_oid) {
-            git_oid_tostr(commit->parent_hash,
-                          sizeof(commit->parent_hash),
-                          parent_oid);
-        }
-    }
+	git_oid_tostr(commit->hash, sizeof(commit->hash), &oid);
 
-    /* get tree oid */
-    const git_oid *tree_oid = git_commit_tree_id(commit_obj);
-    if (tree_oid) {
-        git_oid_tostr(commit->tree_id, sizeof(commit->tree_id), tree_oid);
-    }
+	/* get parent commit oid */
+	if (git_commit_parentcount(commit_obj) > 0) {
+		const git_oid *parent_oid = git_commit_parent_id(commit_obj, 0);
+		if (parent_oid) {
+			git_oid_tostr(commit->parent_hash,
+				      sizeof(commit->parent_hash), parent_oid);
+		}
+	}
 
-   /* get commit message */
-    const char *msg = git_commit_message(commit_obj);
-    snprintf(commit->message, sizeof(commit->message), "%s", msg ? msg : "");
+	/* get tree oid */
+	const git_oid *tree_oid = git_commit_tree_id(commit_obj);
+	if (tree_oid) {
+		git_oid_tostr(commit->tree_id, sizeof(commit->tree_id),
+			      tree_oid);
+	}
 
-    /* get author */
-    const git_signature *author = git_commit_author(commit_obj);
-    if (author) {
-        snprintf(commit->author.name, sizeof(commit->author.name), "%s",
-                 author->name ? author->name : "");
-	snprintf(commit->author.email, sizeof(commit->author.email), "%s",
-                 author->email ? author->email : "");
+	/* get commit message */
+	const char *msg = git_commit_message(commit_obj);
+	snprintf(commit->message, sizeof(commit->message), "%s",
+		 msg ? msg : "");
 
-        commit->timestamp = author->when.time;
-    }
-	
-    /* get committer */
-    const git_signature *committer = git_commit_committer(commit_obj);
-    if (committer) {
-        snprintf(commit->committer.name, sizeof(commit->committer.name), "%s",
-                 committer->name ? committer->name : "");
-	snprintf(commit->committer.email, sizeof(commit->committer.email), "%s",
-                 committer->email ? committer->email : "");
+	/* get author */
+	const git_signature *author = git_commit_author(commit_obj);
+	if (author) {
+		snprintf(commit->author.name, sizeof(commit->author.name), "%s",
+			 author->name ? author->name : "");
+		snprintf(commit->author.email, sizeof(commit->author.email),
+			 "%s", author->email ? author->email : "");
 
-    }
+		commit->timestamp = author->when.time;
+	}
 
-    result = 0;
+	/* get committer */
+	const git_signature *committer = git_commit_committer(commit_obj);
+	if (committer) {
+		snprintf(commit->committer.name, sizeof(commit->committer.name),
+			 "%s", committer->name ? committer->name : "");
+		snprintf(commit->committer.email,
+			 sizeof(commit->committer.email), "%s",
+			 committer->email ? committer->email : "");
+	}
+
+	result = 0;
 
 cleanup:
-    if (commit_obj)
-        git_commit_free(commit_obj);
-    if (repo)
-        git_repository_free(repo);
-    git_libgit2_shutdown();
-    return result;
+	if (commit_obj)
+		git_commit_free(commit_obj);
+	if (repo)
+		git_repository_free(repo);
+	git_libgit2_shutdown();
+	return result;
 }

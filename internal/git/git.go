@@ -2,12 +2,14 @@ package git
 
 /*
 #cgo LDFLAGS: -lgit2
+#include <git2.h>
 #include "git.h"
 #include <stdlib.h>
 */
 import "C"
 
 import (
+	"fmt"
 	"time"
 	"unsafe"
 )
@@ -18,7 +20,7 @@ type BareRepo struct {
 }
 
 type Signature struct {
-	Name string
+	Name  string
 	Email string
 }
 
@@ -38,51 +40,101 @@ type Reference struct {
 	Shorthand string
 }
 
-func ListBareRepos(dirPath string, max int) []BareRepo {
-	cRepos := make([]C.BareRepo, max)
-	count := C.list_bare_repos(C.CString(dirPath), &cRepos[0], C.int(max))
+/*
+* relying fully on libgit2 errors, very clear and simple
+* Libgit2 errors for reference: https://github.com/libgit2/libgit2/blob/main/include/git2/errors.h
+ */
+const errorBufferSize = 512
 
+func ListBareRepos(dirPath string, max int) ([]BareRepo, error) {
+	if max <= 0 {
+		return []BareRepo{}, nil
+	}
+
+	cDir := C.CString(dirPath)
+	defer C.free(unsafe.Pointer(cDir))
+
+	cRepos := make([]C.BareRepo, max)
+	errBuf := make([]C.char, errorBufferSize)
+
+	status := C.list_bare_repos(cDir,
+		(*C.BareRepo)(unsafe.Pointer(&cRepos[0])),
+		C.int(max),
+		errBufPointer(errBuf),
+		C.size_t(len(errBuf)))
+	if status < 0 {
+		return nil, errorFromStatus(status, errBuf)
+	}
+
+	count := int(status)
 	repos := make([]BareRepo, count)
-	for i := 0; i < int(count); i++ {
+	for i := range count {
 		repos[i] = BareRepo{
 			Path: C.GoString(&cRepos[i].path[0]),
 			Name: C.GoString(&cRepos[i].name[0]),
 		}
 	}
-	return repos
+	return repos, nil
 }
 
-func GetCommits(repoPath string, ref string, max int, skip int) []Commit {
-	cCommits := make([]C.Commit, max)
-	count := C.get_commits(C.CString(repoPath), C.CString(ref), &cCommits[0], C.int(max), C.int(skip))
-
-	if count <= 0 {
-		return nil
+func GetCommits(repoPath string, ref string, max int, skip int) ([]Commit, error) {
+	if max <= 0 {
+		return []Commit{}, nil
 	}
 
+	cRepo := C.CString(repoPath)
+	defer C.free(unsafe.Pointer(cRepo))
+	cRef := C.CString(ref)
+	defer C.free(unsafe.Pointer(cRef))
+
+	cCommits := make([]C.Commit, max)
+	errBuf := make([]C.char, errorBufferSize)
+
+	status := C.get_commits(cRepo,
+		cRef,
+		&cCommits[0],
+		C.int(max),
+		C.int(skip),
+		errBufPointer(errBuf),
+		C.size_t(len(errBuf)))
+	if status < 0 {
+		return nil, errorFromStatus(status, errBuf)
+	}
+
+	count := int(status)
 	commits := make([]Commit, count)
-	for i := 0; i < int(count); i++ {
+	for i := range count {
 		commits[i] = commitFromC(&cCommits[i])
 	}
-	return commits
+	return commits, nil
 }
 
-func GetReferences(repoPath string) []Reference {
+func GetReferences(repoPath string) ([]Reference, error) {
 	cRepo := C.CString(repoPath)
 	defer C.free(unsafe.Pointer(cRepo))
 
-	count := int(C.get_reference_count(cRepo))
-	if count <= 0 {
-		return nil
+	errBuf := make([]C.char, errorBufferSize)
+	countStatus := C.get_reference_count(cRepo, errBufPointer(errBuf), C.size_t(len(errBuf)))
+	if countStatus < 0 {
+		return nil, errorFromStatus(countStatus, errBuf)
+	}
+
+	count := int(countStatus)
+	if count == 0 {
+		return []Reference{}, nil
 	}
 
 	cRefs := make([]C.Reference, count)
-
-	n := int(C.get_references(cRepo, (*C.Reference)(unsafe.Pointer(&cRefs[0]))))
-	if n <= 0 {
-		return nil
+	refErrBuf := make([]C.char, errorBufferSize)
+	status := C.get_references(cRepo,
+		(*C.Reference)(unsafe.Pointer(&cRefs[0])),
+		errBufPointer(refErrBuf),
+		C.size_t(len(refErrBuf)))
+	if status < 0 {
+		return nil, errorFromStatus(status, refErrBuf)
 	}
 
+	n := int(status)
 	refs := make([]Reference, n)
 	for i := range refs {
 		refs[i] = Reference{
@@ -91,10 +143,10 @@ func GetReferences(repoPath string) []Reference {
 			Shorthand: C.GoString(&cRefs[i].shorthand[0]),
 		}
 	}
-	return refs
+	return refs, nil
 }
 
-func GetCommit(repoPath string, oidstr string) Commit {
+func GetCommit(repoPath string, oidstr string) (Commit, error) {
 	cRepo := C.CString(repoPath)
 	defer C.free(unsafe.Pointer(cRepo))
 
@@ -102,11 +154,13 @@ func GetCommit(repoPath string, oidstr string) Commit {
 	defer C.free(unsafe.Pointer(cOidstr))
 
 	var cCommit C.Commit
-	if C.get_commit(cRepo, cOidstr, &cCommit) != 0 {
-		return Commit{}
+	errBuf := make([]C.char, errorBufferSize)
+	status := C.get_commit(cRepo, cOidstr, &cCommit, errBufPointer(errBuf), C.size_t(len(errBuf)))
+	if status < 0 {
+		return Commit{}, errorFromStatus(status, errBuf)
 	}
 
-	return commitFromC(&cCommit)
+	return commitFromC(&cCommit), nil
 }
 
 func commitFromC(cCommit *C.Commit) Commit {
@@ -119,8 +173,27 @@ func commitFromC(cCommit *C.Commit) Commit {
 		ParentHash: C.GoString(&cCommit.parent_hash[0]),
 		TreeID:     C.GoString(&cCommit.tree_id[0]),
 		Message:    C.GoString(&cCommit.message[0]),
-		Author:     Signature{ C.GoString(&cCommit.author.name[0]), C.GoString(&cCommit.author.email[0]) },
-		Committer:  Signature{ C.GoString(&cCommit.committer.name[0]), C.GoString(&cCommit.committer.email[0]) },
+		Author:     Signature{C.GoString(&cCommit.author.name[0]), C.GoString(&cCommit.author.email[0])},
+		Committer:  Signature{C.GoString(&cCommit.committer.name[0]), C.GoString(&cCommit.committer.email[0])},
 		Timestamp:  time.Unix(int64(cCommit.timestamp), 0),
 	}
+}
+
+func errBufPointer(buf []C.char) *C.char {
+	if len(buf) == 0 {
+		return nil
+	}
+	return (*C.char)(unsafe.Pointer(&buf[0]))
+}
+
+func errorFromStatus(status C.int, buf []C.char) error {
+	message := ""
+	if len(buf) > 0 {
+		message = C.GoString((*C.char)(unsafe.Pointer(&buf[0])))
+	}
+	if message == "" {
+		/* this should never happen! https://libgit2.org/docs/reference/main/errors/git_error_last.html */
+		message = "unknown git error"
+	}
+	return fmt.Errorf("git error %d: %s", int(status), message)
 }

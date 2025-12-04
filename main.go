@@ -1,8 +1,10 @@
 package main
 
 import (
-	"lipasto/internal/git"
+	"net/http"
 	"strconv"
+
+	"lipasto/internal/git"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,12 +17,16 @@ func main() {
 	r.Static("/static", "./static")
 
 	r.GET("/", func(c *gin.Context) {
-		repos := git.ListBareRepos(reposDir, 100)
-		if repos == nil {
-			c.String(404, "no repositories found")
+		repos, err := git.ListBareRepos(reposDir, 100)
+		if err != nil {
+			respondWithGitError(c, err)
 			return
 		}
-		c.HTML(200, "repos.html", gin.H{"Repos": repos})
+		if len(repos) == 0 {
+			c.String(http.StatusNotFound, "no repositories found")
+			return
+		}
+		c.HTML(http.StatusOK, "repos.html", gin.H{"Repos": repos})
 	})
 
 	r.GET("/:repo", func(c *gin.Context) {
@@ -28,38 +34,40 @@ func main() {
 		ref := c.DefaultQuery("ref", "HEAD")
 		page, err := strconv.Atoi(c.DefaultQuery("page", "0"))
 
-		if (err != nil) {
-			c.String(400, "invalid page number")
+		if err != nil {
+			c.String(http.StatusBadRequest, "invalid page number")
 			return
 		}
 
 		repoPath := reposDir + "/" + repoName
-			
-		per_page := 50
-		skip := page * per_page
-		commits := git.GetCommits(repoPath, ref, 50, skip)
 
-		// TODO: handle errors more spesifically (page out of bounds, invalid ref, etcetctctett...)
-		if commits == nil {
-			c.String(404, "repository not found or has no commits")
+		perPage := 50
+		skip := page * perPage
+		commits, gitErr := git.GetCommits(repoPath, ref, perPage, skip)
+		if gitErr != nil {
+			respondWithGitError(c, gitErr)
+			return
+		}
+		if len(commits) == 0 {
+			c.String(http.StatusNotFound, "repository has no commits in range (%d-%d)... how did we get here?", skip, skip+perPage-1)
 			return
 		}
 
-		c.HTML(200, "commits.html", gin.H{"Commits": commits, "RepoName": repoName})
+		c.HTML(http.StatusOK, "commits.html", gin.H{"Commits": commits, "RepoName": repoName})
 	})
 
-	r.GET(":repo/commit/:hash", func(c *gin.Context) {
+	r.GET("/:repo/commit/:hash", func(c *gin.Context) {
 		repoName := c.Param("repo")
 		commitHash := c.Param("hash")
 		repoPath := reposDir + "/" + repoName
 
-		commit := git.GetCommit(repoPath, commitHash)
-		if commit.Hash == "" {
-			c.String(404, "commit not found")
+		commit, err := git.GetCommit(repoPath, commitHash)
+		if err != nil {
+			respondWithGitError(c, err)
 			return
 		}
 
-		c.HTML(200, "commit.html", gin.H{
+		c.HTML(http.StatusOK, "commit.html", gin.H{
 			"Commit":   commit,
 			"RepoName": repoName,
 		})
@@ -68,13 +76,25 @@ func main() {
 	r.GET("/:repo/refs", func(c *gin.Context) {
 		repoName := c.Param("repo")
 		repoPath := reposDir + "/" + repoName
-		references := git.GetReferences(repoPath)
-		if references == nil {
-			c.String(404, "repository not found or has no references")
+		references, err := git.GetReferences(repoPath)
+		if err != nil {
+			respondWithGitError(c, err)
 			return
 		}
-		c.HTML(200, "refs.html", gin.H{"References": references, "RepoName": repoName})
+		if len(references) == 0 {
+			c.String(http.StatusNotFound, "repository has no references")
+			return
+		}
+		c.HTML(http.StatusOK, "refs.html", gin.H{"References": references, "RepoName": repoName})
 	})
 
 	r.Run()
+}
+
+func respondWithGitError(c *gin.Context, err error) {
+	message := err.Error()
+	if message == "" {
+		message = "internal git error"
+	}
+	c.String(http.StatusInternalServerError, message)
 }
