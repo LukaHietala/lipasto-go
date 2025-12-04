@@ -52,9 +52,9 @@ func ListBareRepos(dirPath string, max int) []BareRepo {
 	return repos
 }
 
-func GetCommits(repoPath string, ref string, max int) []Commit {
+func GetCommits(repoPath string, ref string, max int, skip int) []Commit {
 	cCommits := make([]C.Commit, max)
-	count := C.get_commits(C.CString(repoPath), C.CString(ref), &cCommits[0], C.int(max))
+	count := C.get_commits(C.CString(repoPath), C.CString(ref), &cCommits[0], C.int(max), C.int(skip))
 
 	if count <= 0 {
 		return nil

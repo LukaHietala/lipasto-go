@@ -1,5 +1,4 @@
 #include <git2.h>
-#include <git2/object.h>
 #include <stdio.h>
 #include <dirent.h>
 #include <string.h>
@@ -52,7 +51,7 @@ cleanup:
 }
 
 /* gets all commits from repo */
-int get_commits(const char *repo_path, const char *ref, Commit *commits, int max)
+int get_commits(const char *repo_path, const char *ref, Commit *commits, int max, int skip)
 {
     git_libgit2_init();
 
@@ -80,11 +79,19 @@ int get_commits(const char *repo_path, const char *ref, Commit *commits, int max
     /* TODO: peel if not commit object */
     const git_oid *git_obj_id = git_object_id(obj); 
 
+    /* TODO?: resolve blobs and trees and get all the commits that touch them */
     git_revwalk_sorting(walker, GIT_SORT_TIME);
     if (git_revwalk_push(walker, git_obj_id) != 0)
         goto cleanup;
 
+    int point = 0;
     while (count < max && git_revwalk_next(&oid, walker) == 0) {
+	/* skip until page start (skip) */
+	if (point < skip) {
+	    point++;
+	    continue;
+	}
+
         git_commit *commit = NULL;
 
 	/* lookup commit by oid */

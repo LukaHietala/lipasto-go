@@ -37,7 +37,7 @@ typedef struct {
 } Reference;
 
 int list_bare_repos(const char *dir_path, BareRepo *repos, int max);
-int get_commits(const char *repo_path, const char *ref, Commit *commits, int max);
+int get_commits(const char *repo_path, const char *ref, Commit *commits, int max, int skip);
 int get_references(const char *repo_path, Reference *references);
 int get_reference_count(const char *repo_path);
 int get_commit(const char* repo_path, const char* oidstr, Commit *commit);

@@ -2,6 +2,7 @@ package main
 
 import (
 	"lipasto/internal/git"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,8 +26,20 @@ func main() {
 	r.GET("/:repo", func(c *gin.Context) {
 		repoName := c.Param("repo")
 		ref := c.DefaultQuery("ref", "HEAD")
+		page, err := strconv.Atoi(c.DefaultQuery("page", "0"))
+
+		if (err != nil) {
+			c.String(400, "invalid page number")
+			return
+		}
+
 		repoPath := reposDir + "/" + repoName
-		commits := git.GetCommits(repoPath, ref, 50)
+			
+		per_page := 50
+		skip := page * per_page
+		commits := git.GetCommits(repoPath, ref, 50, skip)
+
+		// TODO: handle errors more spesifically (page out of bounds, invalid ref, etcetctctett...)
 		if commits == nil {
 			c.String(404, "repository not found or has no commits")
 			return
