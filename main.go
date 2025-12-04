@@ -24,8 +24,9 @@ func main() {
 
 	r.GET("/:repo", func(c *gin.Context) {
 		repoName := c.Param("repo")
+		ref := c.DefaultQuery("ref", "HEAD")
 		repoPath := reposDir + "/" + repoName
-		commits := git.GetCommits(repoPath, 50)
+		commits := git.GetCommits(repoPath, ref, 50)
 		if commits == nil {
 			c.String(404, "repository not found or has no commits")
 			return

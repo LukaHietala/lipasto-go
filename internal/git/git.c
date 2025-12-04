@@ -1,4 +1,5 @@
 #include <git2.h>
+#include <git2/object.h>
 #include <stdio.h>
 #include <dirent.h>
 #include <string.h>
@@ -51,7 +52,7 @@ cleanup:
 }
 
 /* gets all commits from repo */
-int get_commits(const char *repo_path, Commit *commits, int max)
+int get_commits(const char *repo_path, const char *ref, Commit *commits, int max)
 {
     git_libgit2_init();
 
@@ -59,7 +60,12 @@ int get_commits(const char *repo_path, Commit *commits, int max)
     git_repository *repo = NULL;
     git_revwalk *walker = NULL;
     git_oid oid;
+    git_object *obj = NULL; /* ?ref= */
     int count = 0;
+
+    if (strlen(ref) == 0) {
+	ref = "HEAD";
+    }
 
     if (git_repository_open_bare(&repo, repo_path) != 0)
         goto cleanup;
@@ -67,8 +73,15 @@ int get_commits(const char *repo_path, Commit *commits, int max)
     if (git_revwalk_new(&walker, repo) != 0)
         goto cleanup;
 
+    if (git_revparse_single(&obj, repo, ref) != 0) {
+	goto cleanup;
+    }
+
+    /* TODO: peel if not commit object */
+    const git_oid *git_obj_id = git_object_id(obj); 
+
     git_revwalk_sorting(walker, GIT_SORT_TIME);
-    if (git_revwalk_push_head(walker) != 0)
+    if (git_revwalk_push(walker, git_obj_id) != 0)
         goto cleanup;
 
     while (count < max && git_revwalk_next(&oid, walker) == 0) {
@@ -129,6 +142,8 @@ cleanup:
         git_revwalk_free(walker);
     if (repo)
         git_repository_free(repo);
+    if (obj)
+	git_object_free(obj);
     git_libgit2_shutdown();
     return result;
 }
