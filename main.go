@@ -12,6 +12,9 @@ import (
 const reposDir = "/home/lhietala/testing"
 
 func main() {
+	git.Init()
+	defer git.Shutdown()
+
 	r := gin.Default()
 	r.LoadHTMLGlob("templates/*")
 	r.Static("/static", "./static")

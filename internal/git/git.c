@@ -39,8 +39,6 @@ static void set_error(char *err, size_t errlen, const char *fallback, int code)
 int list_bare_repos(const char *dir_path, BareRepo *repos, int max, char *err,
 		    size_t errlen)
 {
-	git_libgit2_init();
-
 	DIR *dir = NULL;
 	struct dirent *entry = NULL;
 	int count = 0;
@@ -86,7 +84,6 @@ int list_bare_repos(const char *dir_path, BareRepo *repos, int max, char *err,
 cleanup:
 	if (dir)
 		closedir(dir);
-	git_libgit2_shutdown();
 	return result;
 }
 
@@ -94,8 +91,6 @@ cleanup:
 int get_commits(const char *repo_path, const char *ref, Commit *commits,
 		int max, int skip, char *err, size_t errlen)
 {
-	git_libgit2_init();
-
 	int result = -1;
 	git_repository *repo = NULL;
 	git_revwalk *walker = NULL;
@@ -225,7 +220,6 @@ cleanup:
 		git_repository_free(repo);
 	if (obj)
 		git_object_free(obj);
-	git_libgit2_shutdown();
 	return result;
 }
 
@@ -233,8 +227,6 @@ cleanup:
 int get_references(const char *repo_path, Reference *references, char *err,
 		   size_t errlen)
 {
-	git_libgit2_init();
-
 	git_repository *repo = NULL;
 	git_reference_iterator *iter = NULL;
 	git_reference *ref = NULL;
@@ -314,15 +306,12 @@ cleanup:
 		git_reference_iterator_free(iter);
 	if (repo)
 		git_repository_free(repo);
-	git_libgit2_shutdown();
 	return result;
 }
 
 /* for dynamically allocating slice on go side */
 int get_reference_count(const char *repo_path, char *err, size_t errlen)
 {
-	git_libgit2_init();
-
 	git_repository *repo = NULL;
 	git_reference_iterator *iter = NULL;
 	git_reference *ref = NULL;
@@ -367,7 +356,6 @@ cleanup:
 		git_reference_iterator_free(iter);
 	if (repo)
 		git_repository_free(repo);
-	git_libgit2_shutdown();
 	return result;
 }
 
@@ -377,8 +365,6 @@ int get_commit(const char *repo_path, const char *oidstr, Commit *commit,
 {
 	if (commit == NULL)
 		return -1;
-
-	git_libgit2_init();
 
 	int result = -1;
 	git_repository *repo = NULL;
@@ -460,6 +446,5 @@ cleanup:
 		git_commit_free(commit_obj);
 	if (repo)
 		git_repository_free(repo);
-	git_libgit2_shutdown();
 	return result;
 }
