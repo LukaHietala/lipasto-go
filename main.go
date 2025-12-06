@@ -31,8 +31,13 @@ func main() {
 		}
 		c.HTML(http.StatusOK, "repos.html", gin.H{"Repos": repos})
 	})
+	
+	r.GET("/:repo", func (c *gin.Context) {
+		repoName := c.Param("repo")
+		c.HTML(http.StatusOK, "repo.html", gin.H{"RepoName": repoName})
+	})
 
-	r.GET("/:repo", func(c *gin.Context) {
+	r.GET("/:repo/commits", func(c *gin.Context) {
 		repoName := c.Param("repo")
 		ref := c.DefaultQuery("ref", "HEAD")
 		page, err := strconv.Atoi(c.DefaultQuery("page", "0"))
@@ -59,7 +64,7 @@ func main() {
 		c.HTML(http.StatusOK, "commits.html", gin.H{"Commits": commits, "RepoName": repoName})
 	})
 
-	r.GET("/:repo/commit/:hash", func(c *gin.Context) {
+	r.GET("/:repo/commits/:hash", func(c *gin.Context) {
 		repoName := c.Param("repo")
 		commitHash := c.Param("hash")
 		repoPath := reposDir + "/" + repoName

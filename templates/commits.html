@@ -4,11 +4,11 @@
     <title>{{.RepoName}} - Commits</title>
 </head>
 <body>
-    <h1><a href="/">Back</a> {{.RepoName}}</h1>
+    <h1><a href="/{{.RepoName}}">Back</a> {{.RepoName}}</h1>
     <ul>
         {{range .Commits}}
         <li>
-            <a href="/{{$.RepoName}}/commit/{{.Hash}}">{{.Hash}}</a>
+            <a href="/{{$.RepoName}}/commits/{{.Hash}}">{{.Hash}}</a>
             - {{.Message}} ({{.Author.Name}} {{.Timestamp}})
         </li>
         {{end}}
