@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <string.h>
 #include <errno.h>
+#include <stdlib.h>
 #include "git.h"
 
 /* EVERYTHING NEEDS TO BE CLEANED WITH goto cleanup logic*/
@@ -33,6 +34,21 @@ static void set_error(char *err, size_t errlen, const char *fallback, int code)
 	}
 
 	snprintf(err, errlen, "git error %d", code);
+}
+
+/* frees dynamically allocated commit messages */
+static void free_commit_messages(Commit *commits, int count)
+{
+	if (!commits || count <= 0)
+		return;
+
+	for (int i = 0; i < count; i++) {
+		if (commits[i].message) {
+			free(commits[i].message);
+			commits[i].message = NULL;
+			commits[i].message_len = 0;
+		}
+	}
 }
 
 /* lists all bare repos from dir */
@@ -178,10 +194,25 @@ int get_commits(const char *repo_path, const char *ref, Commit *commits,
 				      sizeof(commits[count].tree_id), tree_oid);
 		}
 
-		/* get commit message */
+		/* get commit message, allocate to fit */
 		const char *msg = git_commit_message(commit);
-		snprintf(commits[count].message, sizeof(commits[count].message),
-			 "%s", msg ? msg : "");
+		size_t msg_len = msg ? strlen(msg) : 0;
+		if (msg_len > 0) {
+			char *msg_copy = malloc(msg_len + 1);
+			if (!msg_copy) {
+				result = -1;
+				set_error(err, errlen, "out of memory", result); //karma
+				git_commit_free(commit);
+				commit = NULL;
+				goto cleanup;
+			}
+			memcpy(msg_copy, msg, msg_len + 1);
+			commits[count].message = msg_copy;
+			commits[count].message_len = msg_len;
+		} else {
+			commits[count].message = NULL;
+			commits[count].message_len = 0;
+		}
 
 		/* get author */
 		const git_signature *author = git_commit_author(commit);
@@ -220,6 +251,8 @@ cleanup:
 		git_repository_free(repo);
 	if (obj)
 		git_object_free(obj);
+	if (result < 0)
+		free_commit_messages(commits, max);
 	return result;
 }
 
@@ -415,8 +448,21 @@ int get_commit(const char *repo_path, const char *oidstr, Commit *commit,
 
 	/* get commit message */
 	const char *msg = git_commit_message(commit_obj);
-	snprintf(commit->message, sizeof(commit->message), "%s",
-		 msg ? msg : "");
+	size_t msg_len = msg ? strlen(msg) : 0;
+	if (msg_len > 0) {
+		char *msg_copy = malloc(msg_len + 1);
+		if (!msg_copy) {
+			result = -1;
+			set_error(err, errlen, "out of memory", result);
+			goto cleanup;
+		}
+		memcpy(msg_copy, msg, msg_len + 1);
+		commit->message = msg_copy;
+		commit->message_len = msg_len;
+	} else {
+		commit->message = NULL;
+		commit->message_len = 0;
+	}
 
 	/* get author */
 	const git_signature *author = git_commit_author(commit_obj);
@@ -446,6 +492,11 @@ cleanup:
 		git_commit_free(commit_obj);
 	if (repo)
 		git_repository_free(repo);
+	if (result < 0 && commit && commit->message) {
+		free(commit->message);
+		commit->message = NULL;
+		commit->message_len = 0;
+	}
 	return result;
 }
 

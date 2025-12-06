@@ -5,15 +5,15 @@
 
 /** completely arbituary */
 #define HASH_SIZE 41
-#define MESSAGE_SIZE 256
 #define PATH_SIZE 512
+#define OWNER_SIZE 256
 #define REFERENCE_NAME_SIZE 256
 #define REFERENCE_SHORTHAND_SIZE 128
-#define OWNER_SIZE 256
+#define REPO_NAME_SIZE 256
 
 typedef struct {
 	char path[PATH_SIZE];
-	char name[MESSAGE_SIZE];
+	char name[REPO_NAME_SIZE];
 } BareRepo;
 
 /* committer or author */
@@ -26,7 +26,8 @@ typedef struct {
 	char hash[HASH_SIZE];
 	char parent_hash[HASH_SIZE];
 	char tree_id[HASH_SIZE];
-	char message[MESSAGE_SIZE];
+	char *message;
+	size_t message_len;
 	Signature author;
 	Signature committer;
 	long timestamp;

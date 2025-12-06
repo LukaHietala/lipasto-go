@@ -207,11 +207,22 @@ func commitFromC(cCommit *C.Commit) Commit {
 		return Commit{}
 	}
 
+	var message string
+	if cCommit.message != nil && cCommit.message_len > 0 {
+		message = C.GoStringN(cCommit.message, C.int(cCommit.message_len))
+	} else if cCommit.message != nil {
+		message = ""
+	}
+	if cCommit.message != nil {
+		C.free(unsafe.Pointer(cCommit.message))
+		cCommit.message = nil
+	}
+
 	return Commit{
 		Hash:       C.GoString(&cCommit.hash[0]),
 		ParentHash: C.GoString(&cCommit.parent_hash[0]),
 		TreeID:     C.GoString(&cCommit.tree_id[0]),
-		Message:    C.GoString(&cCommit.message[0]),
+		Message:    message,
 		Author:     Signature{C.GoString(&cCommit.author.name[0]), C.GoString(&cCommit.author.email[0])},
 		Committer:  Signature{C.GoString(&cCommit.committer.name[0]), C.GoString(&cCommit.committer.email[0])},
 		Timestamp:  time.Unix(int64(cCommit.timestamp), 0),
