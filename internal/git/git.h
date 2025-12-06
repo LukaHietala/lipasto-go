@@ -1,6 +1,8 @@
 #ifndef GIT_H
 #define GIT_H
 
+#include <stddef.h>
+
 /** completely arbituary */
 #define HASH_SIZE 41
 #define MESSAGE_SIZE 256
