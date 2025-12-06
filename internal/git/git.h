@@ -7,6 +7,7 @@
 #define PATH_SIZE 512
 #define REFERENCE_NAME_SIZE 256
 #define REFERENCE_SHORTHAND_SIZE 128
+#define OWNER_SIZE 256
 
 typedef struct {
 	char path[PATH_SIZE];
@@ -44,4 +45,6 @@ int get_references(const char *repo_path, Reference *references, char *err,
 int get_reference_count(const char *repo_path, char *err, size_t errlen);
 int get_commit(const char *repo_path, const char *oidstr, Commit *commit,
 	       char *err, size_t errlen);
+int get_repo_owner(const char *repo_path, char *owner, size_t ownerlen,
+		   char *err, size_t errlen);
 #endif

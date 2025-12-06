@@ -183,6 +183,25 @@ func GetCommit(repoPath string, oidstr string) (Commit, error) {
 	return commitFromC(&cCommit), nil
 }
 
+func GetRepoOwner(repoPath string) (string, error) {
+	cRepo := C.CString(repoPath)
+	defer C.free(unsafe.Pointer(cRepo))
+
+	ownerBuf := make([]C.char, 256)
+	errBuf := make([]C.char, errorBufferSize)
+
+	status := C.get_repo_owner(cRepo,
+		(*C.char)(unsafe.Pointer(&ownerBuf[0])),
+		C.size_t(len(ownerBuf)),
+		errBufPointer(errBuf),
+		C.size_t(len(errBuf)))
+	if status < 0 {
+		return "", errorFromStatus(status, errBuf)
+	}
+
+	return C.GoString((*C.char)(unsafe.Pointer(&ownerBuf[0]))), nil
+}
+
 func commitFromC(cCommit *C.Commit) Commit {
 	if cCommit == nil {
 		return Commit{}

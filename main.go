@@ -31,10 +31,18 @@ func main() {
 		}
 		c.HTML(http.StatusOK, "repos.html", gin.H{"Repos": repos})
 	})
-	
-	r.GET("/:repo", func (c *gin.Context) {
+
+	r.GET("/:repo", func(c *gin.Context) {
 		repoName := c.Param("repo")
-		c.HTML(http.StatusOK, "repo.html", gin.H{"RepoName": repoName})
+		repoPath := reposDir + "/" + repoName
+
+		owner, err := git.GetRepoOwner(repoPath)
+		if err != nil {
+			respondWithGitError(c, err)
+			return
+		}
+
+		c.HTML(http.StatusOK, "repo.html", gin.H{"RepoName": repoName, "Owner": owner})
 	})
 
 	r.GET("/:repo/commits", func(c *gin.Context) {

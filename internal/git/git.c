@@ -448,3 +448,58 @@ cleanup:
 		git_repository_free(repo);
 	return result;
 }
+
+/* gets repo owner from gitweb.owner config key */
+int get_repo_owner(const char *repo_path, char *owner, size_t ownerlen,
+		   char *err, size_t errlen)
+{
+	git_repository *repo = NULL;
+	git_config *cfg = NULL;
+	// using buffers to avoid live config errors
+	git_buf buf = { 0 };
+	int result = -1;
+	int error = 0;
+
+	clear_error(err, errlen);
+	if (owner && ownerlen > 0)
+		owner[0] = '\0';
+
+	error = git_repository_open_bare(&repo, repo_path);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
+
+	error = git_repository_config(&cfg, repo);
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
+
+	// lets just use gitweb.owner for now
+	error = git_config_get_string_buf(&buf, cfg, "gitweb.owner");
+	if (error == GIT_ENOTFOUND) {
+		result = 0;
+		goto cleanup;
+	}
+	if (error != 0) {
+		result = error;
+		set_error(err, errlen, NULL, error);
+		goto cleanup;
+	}
+
+	if (buf.ptr && owner && ownerlen > 0)
+		snprintf(owner, ownerlen, "%s", buf.ptr);
+
+	result = 0;
+
+cleanup:
+	git_buf_dispose(&buf);
+	if (cfg)
+		git_config_free(cfg);
+	if (repo)
+		git_repository_free(repo);
+	return result;
+}

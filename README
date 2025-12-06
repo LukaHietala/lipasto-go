@@ -1,0 +1,4 @@
+Git webview. Like Cgit, but not using a
+built-in cache to maximize server I/O pressure. 
+
+Built with Libgit2 and Gin.
